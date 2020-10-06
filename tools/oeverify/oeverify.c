@@ -16,23 +16,23 @@ typedef struct _evidence_uuid_desc
     oe_uuid_t uuid;
 } _evidence_uuid_desc;
 
-#define OE_REPORT_FORMATS_MAP(XX) \
-    XX(SGX_ECDSA)                 \
-    XX(LEGACY_REPORT_REMOTE)      \
-    XX(RAW_SGX_QUOTE_ECDSA)       \
-    XX(SGX_LOCAL_ATTESTATION)     \
-    XX(SGX_EPID_LINKABLE)         \
+#define OE_EVIDENCE_FORMATS_MAP(XX) \
+    XX(SGX_ECDSA)                   \
+    XX(LEGACY_REPORT_REMOTE)        \
+    XX(RAW_SGX_QUOTE_ECDSA)         \
+    XX(SGX_LOCAL_ATTESTATION)       \
+    XX(SGX_EPID_LINKABLE)           \
     XX(SGX_EPID_UNLINKABLE)
 
-static char* allowed_report_formats =
+static char* allowed_evidence_formats =
 #define XX(id) #id " "
-    OE_REPORT_FORMATS_MAP(XX)
+    OE_EVIDENCE_FORMATS_MAP(XX)
 #undef XX
     ;
 
-static const _evidence_uuid_desc valid_report_formats[] = {
+static const _evidence_uuid_desc valid_evidence_formats[] = {
 #define XX(id) {#id, {OE_FORMAT_UUID_##id}},
-    OE_REPORT_FORMATS_MAP(XX)
+    OE_EVIDENCE_FORMATS_MAP(XX)
 #undef XX
 };
 
@@ -118,20 +118,21 @@ exit:
     return result;
 }
 
-oe_result_t verify_report(
-    const char* report_filename,
+oe_result_t verify_evidence(
+    const char* evidence_filename,
     const char* endorsement_filename,
     oe_uuid_t format)
 {
     oe_result_t result = OE_FAILURE;
-    size_t report_file_size = 0;
-    uint8_t* report_data = NULL;
+    size_t evidence_file_size = 0;
+    uint8_t* evidence_data = NULL;
     size_t endorsement_file_size = 0;
     uint8_t* endorsement_data = NULL;
     oe_claim_t* claims = NULL;
     size_t claims_length = 0;
 
-    if (read_binary_file(report_filename, &report_data, &report_file_size))
+    if (read_binary_file(
+            evidence_filename, &evidence_data, &evidence_file_size))
     {
         if (endorsement_filename != NULL)
         {
@@ -144,8 +145,8 @@ oe_result_t verify_report(
         oe_verifier_initialize();
         result = oe_verify_evidence(
             &format,
-            report_data,
-            report_file_size,
+            evidence_data,
+            evidence_file_size,
             endorsement_data,
             endorsement_file_size,
             NULL,
@@ -160,9 +161,9 @@ oe_result_t verify_report(
         printf("%s(%zu) \n", claims[j].name, claims[j].value_size);
     }
 
-    if (report_data != NULL)
+    if (evidence_data != NULL)
     {
-        free(report_data);
+        free(evidence_data);
     }
 
     if (endorsement_data != NULL)
@@ -240,16 +241,16 @@ oe_result_t verify_cert(const char* filename)
     return result;
 }
 
-bool get_report_format(const char* format_name, oe_uuid_t* format)
+bool get_evidence_format(const char* format_name, oe_uuid_t* format)
 {
     bool format_is_known = false;
-    for (unsigned int i = 0;
-         i < (sizeof(valid_report_formats) / sizeof(valid_report_formats[0]));
+    for (unsigned int i = 0; i < (sizeof(valid_evidence_formats) /
+                                  sizeof(valid_evidence_formats[0]));
          i++)
     {
-        if (strcmp(format_name, valid_report_formats[i].name) == 0)
+        if (strcmp(format_name, valid_evidence_formats[i].name) == 0)
         {
-            *format = valid_report_formats[i].uuid;
+            *format = valid_evidence_formats[i].uuid;
             format_is_known = true;
         }
     }
@@ -260,15 +261,17 @@ bool get_report_format(const char* format_name, oe_uuid_t* format)
 void print_allowed_formats()
 {
     fprintf(
-        stdout, "Allowed report formats are: [ %s]\n", allowed_report_formats);
+        stdout,
+        "Allowed evidence formats are: [ %s]\n",
+        allowed_evidence_formats);
 }
 
 void print_syntax(const char* program_name)
 {
     fprintf(
         stdout,
-        "Usage:\n  %s -r <report_file> [-e <endorsement_file>] [-f "
-        "<report_format>] \n  %s -c "
+        "Usage:\n  %s -r <evidence_file> [-e <endorsement_file>] [-f "
+        "<evidence_format>] \n  %s -c "
         "<certificate_file>\n",
         program_name,
         program_name);
@@ -281,10 +284,10 @@ void print_syntax(const char* program_name)
 
 int main(int argc, const char* argv[])
 {
-    const char* report_filename = NULL;
+    const char* evidence_filename = NULL;
     const char* endorsement_filename = NULL;
     const char* certificate_filename = NULL;
-    const char* report_format = NULL;
+    const char* evidence_format = NULL;
     oe_result_t result = OE_FAILURE;
     int n = 0;
 
@@ -305,7 +308,7 @@ int main(int argc, const char* argv[])
         if (memcmp(argv[n], "-r", 2) == 0)
         {
             if (argc > (n - 1))
-                report_filename = argv[++n];
+                evidence_filename = argv[++n];
         }
         else if (memcmp(argv[n], "-e", 2) == 0)
         {
@@ -321,7 +324,7 @@ int main(int argc, const char* argv[])
         {
             if (argc > (n - 1))
             {
-                report_format = argv[++n];
+                evidence_format = argv[++n];
             }
         }
         else
@@ -331,7 +334,7 @@ int main(int argc, const char* argv[])
         }
     }
 
-    if (report_filename == NULL && certificate_filename == NULL)
+    if (evidence_filename == NULL && certificate_filename == NULL)
     {
         print_syntax(argv[0]);
         return 1;
@@ -340,24 +343,25 @@ int main(int argc, const char* argv[])
     {
         oe_uuid_t oe_format = oe_format_default;
 
-        if (report_format && !get_report_format(report_format, &oe_format))
+        if (evidence_format &&
+            !get_evidence_format(evidence_format, &oe_format))
         {
             fprintf(
                 stderr,
-                "Error: Format report \"%s\" is unknown\n",
-                report_format);
+                "Error: Format evidence \"%s\" is unknown\n",
+                evidence_format);
             print_allowed_formats();
             return 1;
         }
 
-        if (report_filename != NULL)
+        if (evidence_filename != NULL)
         {
-            fprintf(stdout, "Verifying report %s...\n", report_filename);
-            result =
-                verify_report(report_filename, endorsement_filename, oe_format);
+            fprintf(stdout, "Verifying evidence %s...\n", evidence_filename);
+            result = verify_evidence(
+                evidence_filename, endorsement_filename, oe_format);
             fprintf(
                 stdout,
-                "Report verification %s (%u).\n\n",
+                "Evidence verification %s (%u).\n",
                 (result == OE_OK) ? "succeeded" : "failed",
                 result);
         }
@@ -369,7 +373,7 @@ int main(int argc, const char* argv[])
             result = verify_cert(certificate_filename);
             fprintf(
                 stdout,
-                "\n\nCertificate verification %s (%u).\n\n",
+                "\n\nCertificate verification %s (%u).\n",
                 (result == OE_OK) ? "succeeded" : "failed",
                 result);
         }
