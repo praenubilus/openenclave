@@ -10,6 +10,32 @@
 
 static const oe_uuid_t oe_format_default = {OE_FORMAT_UUID_SGX_ECDSA};
 
+typedef struct _evidence_uuid_desc
+{
+    const char* name;
+    oe_uuid_t uuid;
+} _evidence_uuid_desc;
+
+#define OE_REPORT_FORMATS_MAP(XX) \
+    XX(SGX_ECDSA)                 \
+    XX(LEGACY_REPORT_REMOTE)      \
+    XX(RAW_SGX_QUOTE_ECDSA)       \
+    XX(SGX_LOCAL_ATTESTATION)     \
+    XX(SGX_EPID_LINKABLE)         \
+    XX(SGX_EPID_UNLINKABLE)
+
+static char* allowed_report_formats =
+#define XX(id) #id " "
+    OE_REPORT_FORMATS_MAP(XX)
+#undef XX
+    ;
+
+static const _evidence_uuid_desc valid_report_formats[] = {
+#define XX(id) {#id, {OE_FORMAT_UUID_##id}},
+    OE_REPORT_FORMATS_MAP(XX)
+#undef XX
+};
+
 size_t get_filesize(FILE* fp)
 {
     size_t size = 0;
@@ -216,25 +242,10 @@ oe_result_t verify_cert(const char* filename)
 
 bool get_report_format(const char* format_name, oe_uuid_t* format)
 {
-    typedef struct MyType
-    {
-        const char* name;
-        oe_uuid_t uuid;
-    } MyType;
-
-    fprintf(stdout, "Format name is %s\n", format_name);
-
     bool format_is_known = false;
-
-    static const MyType valid_report_formats[6] = {
-        {"sgx_ecdsa", {OE_FORMAT_UUID_SGX_ECDSA}},
-        {"legacy_report_remote", {OE_FORMAT_UUID_LEGACY_REPORT_REMOTE}},
-        {"raw_sgx_quote_ecdsa", {OE_FORMAT_UUID_RAW_SGX_QUOTE_ECDSA}},
-        {"local_attestation", {OE_FORMAT_UUID_SGX_LOCAL_ATTESTATION}},
-        {"sgx_epid_linkable", {OE_FORMAT_UUID_SGX_EPID_LINKABLE}},
-        {"epid_unlinkable", {OE_FORMAT_UUID_SGX_EPID_UNLINKABLE}}};
-
-    for (int i = 0; i < 6; i++)
+    for (unsigned int i = 0;
+         i < (sizeof(valid_report_formats) / sizeof(valid_report_formats[0]));
+         i++)
     {
         if (strcmp(format_name, valid_report_formats[i].name) == 0)
         {
@@ -246,17 +257,25 @@ bool get_report_format(const char* format_name, oe_uuid_t* format)
     return format_is_known;
 }
 
+void print_allowed_formats()
+{
+    fprintf(
+        stdout, "Allowed report formats are: [ %s]\n", allowed_report_formats);
+}
+
 void print_syntax(const char* program_name)
 {
     fprintf(
         stdout,
-        "Usage:\n  %s -r <report_file> [-e <endorsement_file>]\n  %s -c "
+        "Usage:\n  %s -r <report_file> [-e <endorsement_file>] [-f "
+        "<report_format>] \n  %s -c "
         "<certificate_file>\n",
         program_name,
         program_name);
+    print_allowed_formats();
     fprintf(
         stdout,
-        "Verify the integrity of enclave remote report or attestation "
+        "\nVerify the integrity of enclave remote report or attestation "
         "certificate.\n");
 }
 
@@ -303,7 +322,6 @@ int main(int argc, const char* argv[])
             if (argc > (n - 1))
             {
                 report_format = argv[++n];
-                fprintf(stdout, "Format is: %s \n", report_format);
             }
         }
         else
@@ -325,8 +343,10 @@ int main(int argc, const char* argv[])
         if (report_format && !get_report_format(report_format, &oe_format))
         {
             fprintf(
-                stdout, "Format report \"%s\" is not known\n", report_format);
-            print_syntax(argv[0]);
+                stderr,
+                "Error: Format report \"%s\" is unknown\n",
+                report_format);
+            print_allowed_formats();
             return 1;
         }
 
