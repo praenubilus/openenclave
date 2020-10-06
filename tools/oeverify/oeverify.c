@@ -8,6 +8,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+static const oe_uuid_t oe_format_default = {OE_FORMAT_UUID_SGX_ECDSA};
+
 size_t get_filesize(FILE* fp)
 {
     size_t size = 0;
@@ -92,7 +94,8 @@ exit:
 
 oe_result_t verify_report(
     const char* report_filename,
-    const char* endorsement_filename)
+    const char* endorsement_filename,
+    oe_uuid_t format)
 {
     oe_result_t result = OE_FAILURE;
     size_t report_file_size = 0;
@@ -101,8 +104,6 @@ oe_result_t verify_report(
     uint8_t* endorsement_data = NULL;
     oe_claim_t* claims = NULL;
     size_t claims_length = 0;
-    static const oe_uuid_t _uuid_legacy_report_remote = {
-        OE_FORMAT_UUID_LEGACY_REPORT_REMOTE};
 
     if (read_binary_file(report_filename, &report_data, &report_file_size))
     {
@@ -116,7 +117,7 @@ oe_result_t verify_report(
 
         oe_verifier_initialize();
         result = oe_verify_evidence(
-            &_uuid_legacy_report_remote,
+            &format,
             report_data,
             report_file_size,
             endorsement_data,
@@ -213,6 +214,38 @@ oe_result_t verify_cert(const char* filename)
     return result;
 }
 
+bool get_report_format(const char* format_name, oe_uuid_t* format)
+{
+    typedef struct MyType
+    {
+        const char* name;
+        oe_uuid_t uuid;
+    } MyType;
+
+    fprintf(stdout, "Format name is %s\n", format_name);
+
+    bool format_is_known = false;
+
+    static const MyType valid_report_formats[6] = {
+        {"sgx_ecdsa", {OE_FORMAT_UUID_SGX_ECDSA}},
+        {"legacy_report_remote", {OE_FORMAT_UUID_LEGACY_REPORT_REMOTE}},
+        {"raw_sgx_quote_ecdsa", {OE_FORMAT_UUID_RAW_SGX_QUOTE_ECDSA}},
+        {"local_attestation", {OE_FORMAT_UUID_SGX_LOCAL_ATTESTATION}},
+        {"sgx_epid_linkable", {OE_FORMAT_UUID_SGX_EPID_LINKABLE}},
+        {"epid_unlinkable", {OE_FORMAT_UUID_SGX_EPID_UNLINKABLE}}};
+
+    for (int i = 0; i < 6; i++)
+    {
+        if (strcmp(format_name, valid_report_formats[i].name) == 0)
+        {
+            *format = valid_report_formats[i].uuid;
+            format_is_known = true;
+        }
+    }
+
+    return format_is_known;
+}
+
 void print_syntax(const char* program_name)
 {
     fprintf(
@@ -225,11 +258,6 @@ void print_syntax(const char* program_name)
         stdout,
         "Verify the integrity of enclave remote report or attestation "
         "certificate.\n");
-    fprintf(
-        stdout,
-        "WARNING: %s does not have a stable CLI interface. Use with "
-        "caution.\n",
-        program_name);
 }
 
 int main(int argc, const char* argv[])
@@ -237,6 +265,7 @@ int main(int argc, const char* argv[])
     const char* report_filename = NULL;
     const char* endorsement_filename = NULL;
     const char* certificate_filename = NULL;
+    const char* report_format = NULL;
     oe_result_t result = OE_FAILURE;
     int n = 0;
 
@@ -269,6 +298,14 @@ int main(int argc, const char* argv[])
             if (argc > (n - 1))
                 certificate_filename = argv[++n];
         }
+        else if (memcmp(argv[n], "-f", 2) == 0)
+        {
+            if (argc > (n - 1))
+            {
+                report_format = argv[++n];
+                fprintf(stdout, "Format is: %s \n", report_format);
+            }
+        }
         else
         {
             print_syntax(argv[0]);
@@ -283,10 +320,21 @@ int main(int argc, const char* argv[])
     }
     else
     {
+        oe_uuid_t oe_format = oe_format_default;
+
+        if (report_format && !get_report_format(report_format, &oe_format))
+        {
+            fprintf(
+                stdout, "Format report \"%s\" is not known\n", report_format);
+            print_syntax(argv[0]);
+            return 1;
+        }
+
         if (report_filename != NULL)
         {
             fprintf(stdout, "Verifying report %s...\n", report_filename);
-            result = verify_report(report_filename, endorsement_filename);
+            result =
+                verify_report(report_filename, endorsement_filename, oe_format);
             fprintf(
                 stdout,
                 "Report verification %s (%u).\n\n",
