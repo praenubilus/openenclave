@@ -275,7 +275,7 @@ void print_syntax(const char* program_name)
     print_allowed_formats();
     fprintf(
         stdout,
-        "\nVerify the integrity of enclave remote report or attestation "
+        "\nVerify the integrity of enclave attestation evidence or attestation "
         "certificate.\n");
 }
 
